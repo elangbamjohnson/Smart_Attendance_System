@@ -22,7 +22,8 @@ class CameraViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
     struct Person: Codable, Identifiable {
         let id: UUID
         let name: String
-        let imagePath: String
+        let embedding: [Float]
+        let imagePath: String   // ✅ bring this back
     }
     
     struct AttendanceRecord: Identifiable {
@@ -216,7 +217,8 @@ class CameraViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
     
     func saveFace(name: String) {
         
-        guard let face = capturedFace else { return }
+        guard let face = capturedFace,
+              let embedding = getEmbedding(from: face) else { return }
         
         let id = UUID()
         let fileName = "\(id).png"
@@ -227,12 +229,20 @@ class CameraViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
         do {
             try data.write(to: fileURL)
             
-            let person = Person(id: id, name: name, imagePath: fileName)
+            let person = Person(
+                id: id,
+                name: name,
+                embedding: embedding,
+                imagePath: fileName   // ✅ now valid again
+            )
+            
             savedFaces.append(person)
             saveMetadata()
+            
             showNameInput = false
+            
         } catch {
-            print("Error saving image: \(error)")
+            print("Error saving image:", error)
         }
     }
     
@@ -264,6 +274,7 @@ class CameraViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
         return UIImage(contentsOfFile: url.path)
     }
     
+    
     func handleTap(at point: CGPoint, in size: CGSize) {
         
         for box in faceBoxes {
@@ -293,41 +304,118 @@ class CameraViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
     
     func recognizeFace(_ image: UIImage) -> String {
         
-        guard let inputData = image.pngData() else { return "Unknown" }
+        guard let embedding = getEmbedding(from: image) else {
+            return "Unknown"
+        }
         
-        var bestMatchName = "Unknown"
-        var bestScore: Float = 0.0
+        var bestMatch = "Unknown"
+        var bestScore: Float = -1   // cosine can be negative
         
         for person in savedFaces {
+            let score = cosineSimilarity(embedding, person.embedding)
             
-            guard let savedImage = loadImage(for: person),
-                  let savedData = savedImage.pngData() else { continue }
+            print("Comparing with \(person.name), score: \(score)")
             
-            let similarity = compareImages(data1: inputData, data2: savedData)
-            
-            if similarity > bestScore {
-                bestScore = similarity
-                bestMatchName = person.name
+            if score > bestScore {
+                bestScore = score
+                bestMatch = person.name
             }
         }
         
-        // 🔥 Threshold to avoid false matches
-        return bestScore > 0.1 ? bestMatchName : "Unknown"
+        print("Best score:", bestScore)
+        
+        return bestScore > 0.6 ? bestMatch : "Unknown"
     }
     
-    func compareImages(data1: Data, data2: Data) -> Float {
+    func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {
         
-        let count = min(data1.count, data2.count)
+        let dotProduct = zip(a, b).map(*).reduce(0, +)
         
-        var matchCount = 0
+        let normA = sqrt(a.map { $0 * $0 }.reduce(0, +))
+        let normB = sqrt(b.map { $0 * $0 }.reduce(0, +))
         
-        for i in 0..<count {
-            if data1[i] == data2[i] {
-                matchCount += 1
+        return dotProduct / (normA * normB)
+    }
+    
+    func imageToMLMultiArray(_ image: UIImage) -> MLMultiArray? {
+        
+        let size = CGSize(width: 160, height: 160)
+        
+        UIGraphicsBeginImageContextWithOptions(size, true, 1.0)
+        image.draw(in: CGRect(origin: .zero, size: size))
+        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        
+        guard let cgImage = resizedImage?.cgImage else { return nil }
+        
+        guard let array = try? MLMultiArray(shape: [1, 160, 160, 3], dataType: .float32) else {
+            return nil
+        }
+        
+        let context = CGContext(
+            data: nil,
+            width: 160,
+            height: 160,
+            bitsPerComponent: 8,
+            bytesPerRow: 160 * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+        )
+        
+        context?.draw(cgImage, in: CGRect(x: 0, y: 0, width: 160, height: 160))
+        
+        guard let pixelData = context?.data else { return nil }
+        
+        let pointer = pixelData.bindMemory(to: UInt8.self, capacity: 160 * 160 * 4)
+        
+        var index = 0
+        
+        for y in 0..<160 {
+            for x in 0..<160 {
+                
+                let offset = (y * 160 + x) * 4
+                
+                let r = Float(pointer[offset]) / 255.0
+                let g = Float(pointer[offset + 1]) / 255.0
+                let b = Float(pointer[offset + 2]) / 255.0
+                
+                array[index] = NSNumber(value: r)
+                array[index + 1] = NSNumber(value: g)
+                array[index + 2] = NSNumber(value: b)
+                
+                index += 3
             }
         }
         
-        return Float(matchCount) / Float(count)
+        return array
+    }
+    
+    func getEmbedding(from image: UIImage) -> [Float]? {
+        
+        guard let input = imageToMLMultiArray(image) else { return nil }
+        
+        do {
+            let model = try Facenet6(configuration: MLModelConfiguration())
+            let output = try model.prediction(input: input)
+            
+            let embeddingArray = output.embeddings
+            
+            var embedding = (0..<embeddingArray.count).map {
+                Float(truncating: embeddingArray[$0])
+            }
+            
+            // 🔥 NORMALIZE VECTOR
+            let norm = sqrt(embedding.map { $0 * $0 }.reduce(0, +))
+            embedding = embedding.map { $0 / norm }
+            
+            print("Embedding size:", embedding.count)
+            
+            return embedding
+            
+        } catch {
+            print("Embedding error: \(error)")
+            return nil
+        }
     }
     
 }
