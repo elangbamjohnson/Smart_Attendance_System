@@ -178,24 +178,61 @@ class CameraViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
     }
     
     func captureFace(from box: CGRect) {
+        
         guard let pixelBuffer = currentPixelBuffer else { return }
+        
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         
         let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
         let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
         
-        let rect = VNImageRectForNormalizedRect(box, Int(width), Int(height))
+        // Convert normalized → pixel rect
+        var rect = VNImageRectForNormalizedRect(box, Int(width), Int(height))
+        
+        // 🔥 Add padding (IMPORTANT)
+        let padding: CGFloat = 0.3   // 30% padding
+        
+        let side = max(rect.width, rect.height)
+
+        let squareRect = CGRect(
+            x: rect.midX - side / 2,
+            y: rect.midY - side / 2,
+            width: side,
+            height: side
+        )
+
+        // Clamp again
+        rect = squareRect.intersection(CGRect(x: 0, y: 0, width: width, height: height))
+        
+        let newWidth = rect.width * (1 + padding)
+        let newHeight = rect.height * (1 + padding)
+        
+        let newX = rect.origin.x - (newWidth - rect.width) / 2
+        let newY = rect.origin.y - (newHeight - rect.height) / 2
+        
+        rect = CGRect(x: newX, y: newY, width: newWidth, height: newHeight)
+        
+        // 🔥 Clamp to image bounds (VERY IMPORTANT)
+        rect = rect.intersection(CGRect(x: 0, y: 0, width: width, height: height))
+        
+        print("Crop rect:", rect)
+        
         let cropped = ciImage.cropped(to: rect)
+        
         let context = CIContext()
         
         if let cgImage = context.createCGImage(cropped, from: cropped.extent) {
-//               let uiImage = UIImage(cgImage: cgImage)
-            let uiImage = UIImage(cgImage: cgImage, scale: 1.0, orientation: .leftMirrored)
-               
-               DispatchQueue.main.async {
-                   self.handleCapturedFace(uiImage)
-               }
-           }
+            
+            let uiImage = UIImage(
+                cgImage: cgImage,
+                scale: 1.0,
+                orientation: .leftMirrored
+            )
+            
+            DispatchQueue.main.async {
+                self.handleCapturedFace(uiImage)
+            }
+        }
     }
     
     func handleCapturedFace(_ image: UIImage) {
