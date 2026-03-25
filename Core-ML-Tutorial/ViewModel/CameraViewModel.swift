@@ -18,6 +18,9 @@ class CameraViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
     @Published var capturedFace: UIImage?
     @Published var showNameInput: Bool = false
     @Published var attendanceRecords: [AttendanceRecord] = []
+    @Published var recognizedName: String = ""
+    @Published var showRecognitionBanner: Bool = false
+    
     
     struct Person: Codable, Identifiable {
         let id: UUID
@@ -194,15 +197,27 @@ class CameraViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
         
         let name = recognizeFace(image)
         
-        print("Recognized: \(name)")
-        
-        if name == "Unknown" {
-            // New user → register
-            self.capturedFace = image
-            self.showNameInput = true
-        } else {
-            // Known user → mark attendance
-            markAttendance(name: name)
+        DispatchQueue.main.async {
+            if name == "Unknown" {
+                // ❌ New user
+                self.capturedFace = image
+                self.showNameInput = true
+                
+                self.recognizedName = "New Face Detected"
+                self.showRecognitionBanner = true
+                
+            } else {
+                // ✅ Known user
+                self.recognizedName = "\(name) marked present ✅"
+                self.showRecognitionBanner = true
+                
+                self.markAttendance(name: name)
+                
+                // Auto hide after 2 sec
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                    self.showRecognitionBanner = false
+                }
+            }
         }
     }
     

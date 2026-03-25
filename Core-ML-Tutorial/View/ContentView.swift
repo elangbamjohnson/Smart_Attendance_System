@@ -33,6 +33,20 @@ struct ContentView: View {
                 
                 // 🔥 CAMERA UI (YOUR ZSTACK GOES HERE)
                 ZStack {
+                    if cameraVM.showRecognitionBanner {
+                        VStack {
+                            Text(cameraVM.recognizedName)
+                                .font(.headline)
+                                .padding()
+                                .background(Color.green.opacity(0.8))
+                                .foregroundColor(.white)
+                                .cornerRadius(12)
+                                .padding()
+                            
+                            Spacer()
+                        }
+                    }
+                    
                     CameraView(session: cameraVM.session)
                         .ignoresSafeArea()
                     
@@ -105,12 +119,17 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $cameraVM.showNameInput) {
-            VStack {
+            VStack(spacing: 20) {
+                
+                Text("New Person Detected")
+                    .font(.headline)
+                
                 if let face = cameraVM.capturedFace {
                     Image(uiImage: face)
                         .resizable()
                         .scaledToFit()
                         .frame(height: 200)
+                        .cornerRadius(12)
                 }
                 
                 TextField("Enter name", text: $name)
@@ -121,6 +140,9 @@ struct ContentView: View {
                     cameraVM.saveFace(name: name)
                     name = ""
                 }
+                .buttonStyle(.borderedProminent)
+                
+                Spacer()
             }
             .padding()
         }
