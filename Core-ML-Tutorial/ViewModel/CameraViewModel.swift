@@ -205,7 +205,7 @@ class CameraViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
         print("Recognized: \(name)")
         
         DispatchQueue.main.async {
-            if name == "Unknown" {
+            if name == "Unknown" && self.capturedFace == nil {
                 // ❌ New user
                 self.capturedFace = image
                 self.showNameInput = true
@@ -468,6 +468,24 @@ class CameraViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
         utterance.rate = 0.5
         
         speechSynthesizer.speak(utterance)
+    }
+    
+    func cancelFaceRegistration() {
+        
+        // Clear captured data
+        capturedFace = nil
+        
+        // Close sheet
+        showNameInput = false
+        
+        // Reset UI state
+        recognizedName = ""
+        showRecognitionBanner = false
+        
+        // Optional: reset last spoken text so next scan speaks again
+        lastSpokenText = nil
+        
+        print("Face registration cancelled")
     }
     
 }

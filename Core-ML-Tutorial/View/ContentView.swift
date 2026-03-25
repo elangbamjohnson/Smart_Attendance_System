@@ -136,11 +136,25 @@ struct ContentView: View {
                     .textFieldStyle(.roundedBorder)
                     .padding()
                 
-                Button("Save") {
-                    cameraVM.saveFace(name: name)
-                    name = ""
+                HStack {
+                    
+                    // ❌ Cancel Button
+                    Button("Cancel") {
+                        cameraVM.cancelFaceRegistration()
+                        name = ""
+                    }
+                    .foregroundColor(.red)
+                    
+                    Spacer()
+                    
+                    // ✅ Save Button
+                    Button("Save") {
+                        cameraVM.saveFace(name: name)
+                        name = ""
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
-                .buttonStyle(.borderedProminent)
+                .padding(.horizontal)
                 
                 Spacer()
             }
